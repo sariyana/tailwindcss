@@ -3,9 +3,11 @@
 namespace LaravelFrontendPresets\TailwindCssPreset;
 
 use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
 use Illuminate\Container\Container;
 use Illuminate\Filesystem\Filesystem;
-use Illuminate\Foundation\Console\Presets\Preset;
+use Laravel\Ui\Presets\Preset;
+use Symfony\Component\Finder\SplFileInfo;
 
 class TailwindCssPreset extends Preset
 {
@@ -15,24 +17,27 @@ class TailwindCssPreset extends Preset
         static::updateStyles();
         static::updateBootstrapping();
         static::updateWelcomePage();
+        static::updatePagination();
         static::removeNodeModules();
     }
 
     public static function installAuth()
     {
-        static::install();
+        static::scaffoldController();
         static::scaffoldAuth();
     }
 
     protected static function updatePackageArray(array $packages)
     {
         return array_merge([
-            'laravel-mix' => '^2.1',
-            'laravel-mix-purgecss' => '^2.2',
+            'laravel-mix' => '^5.0.1',
             'laravel-mix-tailwind' => '^0.1.0',
+            'tailwindcss' => '^1.4',
+            '@tailwindcss/custom-forms' => '^0.2',
         ], Arr::except($packages, [
             'bootstrap',
             'bootstrap-sass',
+            'popper.js',
             'laravel-mix',
             'jquery',
         ]));
@@ -55,11 +60,18 @@ class TailwindCssPreset extends Preset
 
     protected static function updateBootstrapping()
     {
-        copy(__DIR__.'/tailwindcss-stubs/tailwind.js', base_path('tailwind.js'));
+        copy(__DIR__.'/tailwindcss-stubs/tailwind.config.js', base_path('tailwind.config.js'));
 
         copy(__DIR__.'/tailwindcss-stubs/webpack.mix.js', base_path('webpack.mix.js'));
 
         copy(__DIR__.'/tailwindcss-stubs/resources/js/bootstrap.js', resource_path('js/bootstrap.js'));
+    }
+
+    protected static function updatePagination()
+    {
+        (new Filesystem)->delete(resource_path('views/vendor/paginate'));
+
+        (new Filesystem)->copyDirectory(__DIR__.'/tailwindcss-stubs/resources/views/vendor/pagination', resource_path('views/vendor/pagination'));
     }
 
     protected static function updateWelcomePage()
@@ -67,6 +79,23 @@ class TailwindCssPreset extends Preset
         (new Filesystem)->delete(resource_path('views/welcome.blade.php'));
 
         copy(__DIR__.'/tailwindcss-stubs/resources/views/welcome.blade.php', resource_path('views/welcome.blade.php'));
+    }
+
+    protected static function scaffoldController()
+    {
+        if (! is_dir($directory = app_path('Http/Controllers/Auth'))) {
+            mkdir($directory, 0755, true);
+        }
+
+        $filesystem = new Filesystem;
+
+        collect($filesystem->allFiles(base_path('vendor/laravel/ui/stubs/Auth')))
+            ->each(function (SplFileInfo $file) use ($filesystem) {
+                $filesystem->copy(
+                    $file->getPathname(),
+                    app_path('Http/Controllers/Auth/'.Str::replaceLast('.stub', '.php', $file->getFilename()))
+                );
+            });
     }
 
     protected static function scaffoldAuth()
@@ -79,7 +108,17 @@ class TailwindCssPreset extends Preset
             FILE_APPEND
         );
 
-        (new Filesystem)->copyDirectory(__DIR__.'/tailwindcss-stubs/resources/views', resource_path('views'));
+        tap(new Filesystem, function ($filesystem) {
+            $filesystem->copyDirectory(__DIR__.'/tailwindcss-stubs/resources/views', resource_path('views'));
+
+            collect($filesystem->allFiles(base_path('vendor/laravel/ui/stubs/migrations')))
+                ->each(function (SplFileInfo $file) use ($filesystem) {
+                    $filesystem->copy(
+                        $file->getPathname(),
+                        database_path('migrations/'.$file->getFilename())
+                    );
+                });
+        });
     }
 
     protected static function compileControllerStub()
